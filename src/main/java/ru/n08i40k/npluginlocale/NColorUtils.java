@@ -23,63 +23,80 @@ public class NColorUtils {
         String match;
     }
 
-    public static TextComponent translate(String message) {
+    private static List<PrefixMatch> getMatches(String message) {
+        List<PrefixMatch> matches = new ArrayList<>();
+
+        Pattern pattern = Pattern.compile("&#[a-zA-Z0-9]{6}");
+        Matcher matcher = pattern.matcher(message);
+
+        while (matcher.find()) {
+            PrefixMatch prefixMatch = new PrefixMatch();
+
+            prefixMatch.match = matcher.group(0).substring(1);
+            prefixMatch.begin = matcher.start(0);
+            prefixMatch.end = matcher.end(0);
+
+            matches.add(prefixMatch);
+        }
+
+        return matches;
+    }
+
+    public static String removeDuplicatedTags(String message) {
+        List<PrefixMatch> matches = getMatches(message);
+
+        for (int i = matches.size() - 1; i > 0; --i) {
+            PrefixMatch currentMatch = matches.get(i);
+            PrefixMatch previousMatch = matches.get(i - 1);
+
+            if (!currentMatch.match.equals(previousMatch.match))
+                continue;
+
+            message = message.substring(0, currentMatch.begin) + message.substring(currentMatch.end);
+        }
+
+        return message;
+    }
+
+    public static TextComponent translate(String message, boolean italic) {
         message = message.replace("&r", "&#ffffff");
         message = ChatColor.translateAlternateColorCodes('&', message);
 
-        List<TextComponent> componentList = new ArrayList<>();
+        message = removeDuplicatedTags(message);
 
         List<String> textParts = new ArrayList<>();
         List<String> textPrefixes = new ArrayList<>();
 
-        {
-            List<PrefixMatch> matches = new ArrayList<>();
+        List<PrefixMatch> matches = getMatches(message);
+        if (matches.isEmpty()) {
+            textPrefixes.add("#ffffff");
+            textParts.add(message);
+        } else {
+            if (matches.get(0).begin > 0)
+                textPrefixes.add("#ffffff");
 
-            {
-                final String regex = "&#[a-zA-Z0-9]{6}";
+            int offset = 0;
 
-                final Pattern pattern = Pattern.compile(regex);
-                final Matcher matcher = pattern.matcher(message);
-
-                while (matcher.find()) {
-                    PrefixMatch prefixMatch = new PrefixMatch();
-
-                    prefixMatch.match = matcher.group(0).substring(1);
-                    prefixMatch.begin = matcher.start(0);
-                    prefixMatch.end = matcher.end(0);
-
-                    matches.add(prefixMatch);
-                }
-            }
-
-            {
-                if (matches.isEmpty()) {
-                    textPrefixes.add("#ffffff");
-                    textParts.add(message);
+            for (PrefixMatch match : matches) {
+                if (match.begin > offset) {
+                    textPrefixes.add(match.match);
+                    textParts.add(message.substring(offset).substring(0, match.begin - offset));
                 } else {
-                    if (matches.get(0).begin > 0)
-                        textPrefixes.add("#ffffff");
-
-                    int offset = 0;
-
-                    for (PrefixMatch match : matches) {
-                        if (match.begin > offset) {
-                            textPrefixes.add(match.match);
-                            textParts.add(message.substring(offset).substring(0, match.begin - offset));
-                        } else {
-                            if (match.begin == 0)
-                                textPrefixes.add(match.match);
-                            else
-                                textPrefixes.set(textPrefixes.size() - 1, match.match);
-                        }
-                        offset = match.end;
-                    }
-
-                    if (message.length() >= offset)
-                        textParts.add(message.substring(offset));
+                    if (match.begin == 0)
+                        textPrefixes.add(match.match);
+                    else
+                        textPrefixes.set(textPrefixes.size() - 1, match.match);
                 }
+                offset = match.end;
             }
+
+            if (message.length() >= offset)
+                textParts.add(message.substring(offset));
         }
+
+
+        List<TextComponent> componentList = new ArrayList<>();
+
         for (int i = 0; i < textParts.size(); ++i) {
             if (textParts.get(i).isEmpty()) continue;
 
@@ -90,44 +107,25 @@ public class NColorUtils {
                             )));
         }
 
-        TextComponent component = Component.empty().children(componentList);
-        return component.decoration(TextDecoration.ITALIC, false);
+        Component component = Component.empty().children(componentList);
+
+        if (!italic)
+            component = component.decoration(TextDecoration.ITALIC, false);
+
+        return (TextComponent) component;
     }
 
-    public static String oneCode(String message, String hexStart, String hexEnd) {
+    public static String generateGradientString(String message, String hexStart, String hexEnd) {
         List<String> gradient = generateHexGradient(hexStart, hexEnd, message.length());
 
-        String result = "";
+        StringBuilder result = new StringBuilder();
 
         for (int i = 0; i < message.length(); ++i) {
-            result += "&" + gradient.get(i) + message.charAt(i);
+            result.append("&").append(gradient.get(i)).append(message.charAt(i));
         }
 
-        return result;
+        return result.toString();
     }
-
-//    public static String html(String message) {
-//        String result = message;
-//
-//        final String regex = "<#([a-zA-Z0-9]{6})>(.*?)<#([a-zA-Z0-9]{6})\\/>";
-//        final String string = message;
-//
-//        final Pattern pattern = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS);
-//        final Matcher matcher = pattern.matcher(string);
-//
-//        while (matcher.find()) {
-//            System.out.println("Full match: " + matcher.group(0));
-//
-//            for (int i = 1; i <= matcher.groupCount(); i++) {
-//                System.out.println("Group " + i + ": " + matcher.group(i));
-//            }
-//
-//            result = result.replace(matcher.group(0), oneCode(matcher.group(2), matcher.group(1), matcher.group(3)));
-//        }
-//
-//        return result;
-//    }
-
 
     public static List<String> generateHexGradient(String startHex, String endHex, int size) {
         List<String> gradient = new ArrayList<>();
@@ -167,7 +165,7 @@ public class NColorUtils {
         return gradient;
     }
 
-    static class ColorTagMatch {
+    public static class ColorTagMatch {
         public ColorTagMatch() {}
 
         @Getter
@@ -179,7 +177,7 @@ public class NColorUtils {
         String text;
     }
 
-    public static List<ColorTagMatch> getTags(String message, String regex, boolean isClosing) {
+    public static List<ColorTagMatch> getGradientTags(String message, String regex, boolean isClosing) {
         final Pattern pattern = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS);
         final Matcher matcher = pattern.matcher(message);
 
@@ -199,9 +197,9 @@ public class NColorUtils {
         return tags;
     }
 
-    public static String multiTag(String message) {
-        List<ColorTagMatch> startTags = getTags(message, "<#([0-9a-fA-F]{6})>", false);
-        List<ColorTagMatch> endTags = getTags(message, "</#([0-9a-fA-F]{6})>", true);
+    public static String parseGradientTags(String message) {
+        List<ColorTagMatch> startTags = getGradientTags(message, "<#([0-9a-fA-F]{6})>", false);
+        List<ColorTagMatch> endTags = getGradientTags(message, "</#([0-9a-fA-F]{6})>", true);
 
         List<ColorTagMatch> tags = new ArrayList<>();
         tags.addAll(startTags);
@@ -250,7 +248,7 @@ public class NColorUtils {
 
             String textBetween = message.substring(tag.end, nextTag.begin);
 
-            result.append(oneCode(textBetween, tag.text, nextTag.text));
+            result.append(generateGradientString(textBetween, tag.text, nextTag.text));
         }
 
         return result.toString();

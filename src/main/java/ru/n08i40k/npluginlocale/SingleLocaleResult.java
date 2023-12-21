@@ -40,7 +40,7 @@ public class SingleLocaleResult {
     }
 
     public TextComponent getC() {
-        return NColorUtils.translate(NColorUtils.multiTag(line));
+        return NColorUtils.translate(NColorUtils.parseGradientTags(line), true);
     }
 
     @Override
